@@ -13,7 +13,7 @@ def score(chunk_data, index):
 
 
 def print_final_analysis():
-    client = MongoClient("mongodb+srv://lohithamara2109_db_user:2u3OqJEO4fVlNHRd@cluster0.qt4qlow.mongodb.net/")
+    client = MongoClient("MONGODB_URL")
     database = client.get_database("textminer_db")
     analysis_collection = database.get_collection("analysis")
     doc_id = "default"
