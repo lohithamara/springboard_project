@@ -1,50 +1,158 @@
 import sys
 import os
 import multitasking
+from pymongo import MongoClient
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.negative_words import negative_words
 from utils.positive_words import positive_words
+from utils.neutral_words import neutral_words
+
+client = MongoClient("mongodb+srv://lohithamara2109_db_user:2u3OqJEO4fVlNHRd@cluster0.qt4qlow.mongodb.net/")
+database = client.get_database("textminer_db")
+sentences_collection = database.get_collection("sentences")
+words_collection = database.get_collection("words")
+analysis_collection = database.get_collection("analysis")
+analysis_doc_id = "default"
+
+analysis_collection.delete_many({})
+analysis_collection.insert_one({
+    "id": analysis_doc_id,
+    "total_paras": 0,
+    "total_number_of_sentences": 0,
+    "total_score": 0,
+    "total_number_of_words": 0,
+    "total_negative_words": 0,
+    "total_positive_words": 0,
+    "total_dict_hits": 0,
+    "total_dict_miss": 0,
+    "total_positive_sentences": 0,
+    "total_negative_sentences": 0
+    })
+
+def is_empty(text):
+    text = text.strip()
+    return len(text) == 0
+
 def score_paragraph(paragraph):
-    """
-    Analyze score for given paragraph.
-    :param paragraph:
-    :return:
-    """
-    paragraph_score=0
-    sentences=paragraph.split(".")
-    for i,sentence in enumerate(sentences):
-        sentence_score=score_sentence(sentence)
-        # TODO: replace print with storage
-        # print(f"Sentence {i} , Score is {sentence_score}")
-        paragraph_score+=sentence_score
+    if is_empty(paragraph):
+        pass
+    paragraph_score = 0
+    sentences = [s.strip() for s in paragraph.split(".") if s.strip()]  # Remove empty sentences
+    analysis_collection.update_one(
+        {"id": analysis_doc_id},
+        {"$inc": {
+            "total_paras": 1,
+        }}
+    )
+    total_number_of_sentences = len(sentences)
+    analysis_collection.update_one(
+        {"id": analysis_doc_id},
+        {"$inc": {
+            "total_number_of_sentences": total_number_of_sentences,
+        }}
+    )
+    for sentence in sentences:
+        sentence_score = score_sentence(sentence)
+        sentiment = "Negative"
+        if sentence_score > 0:
+            analysis_collection.update_one(
+                {"id": analysis_doc_id},
+                {"$inc": {
+                    "total_positive_sentences": 1,
+                }}
+            )
+            sentiment = "Positive"
+        if sentence_score == 0:
+            sentiment = "Neutral"
+        if sentiment == "Negative":
+            analysis_collection.update_one(
+                {"id": analysis_doc_id},
+                {"$inc": {
+                    "total_negative_sentences": 1,
+                }}
+            )
+        mydict = {"sentence": sentence, "score": sentence_score, "sentiment": sentiment}
+        if not sentences_collection.find_one({"sentence": sentence}):
+            sentences_collection.insert_one(mydict)
+        paragraph_score += sentence_score
+        analysis_collection.update_one(
+            {"id": analysis_doc_id},
+            {"$inc": {
+                "total_score": paragraph_score,
+            }}
+        )
     return paragraph_score
 
-def score_sentence(sentence):
+
+def score_sentence(sentence: str):
+    if is_empty(sentence):
+        pass
     """
     Analyze score for given sentence.
     :param sentence: Sentence to be analyzed
     :return: sentiment score for the sentence
     """
-    sentence_score=0
-    words=sentence.split()
-    for i,word in enumerate(words):
-        word_score=analyze_word(word)
-        sentence_score+=word_score
-    return sentence_score
+    res = 0
+    words = [w.strip() for w in sentence.split() if w.strip()]
+    total_number_of_words = len(words)
+    analysis_collection.update_one(
+        {"id": analysis_doc_id},
+        {"$inc": {
+            "total_number_of_words": total_number_of_words,
+        }}
+    )
+    for word in words:
+        word_score = analyze_word(word)
+        available_in_dict = is_available_in_dict(word)
+        if available_in_dict:
+            analysis_collection.update_one(
+                {"id": analysis_doc_id},
+                {"$inc": {
+                    "total_dict_hits": 1,
+                }}
+            )
+        else:
+            analysis_collection.update_one(
+                {"id": analysis_doc_id},
+                {"$inc": {
+                    "total_dict_miss": 1,
+                }}
+            )
+        word_dict = {"word": word, "score": word_score, "is_available_in_dict": available_in_dict}
+        if not words_collection.find_one({"word": word}):
+            words_collection.insert_one(word_dict)
+        res += word_score
+    return res
+
 
 def analyze_word(word):
+    if is_empty(word):
+        pass
     """
     Analyze score for given word.
     :param word: word to be analyzed
     :return: sentiment score for the word
     """
-    is_negative=negative_check(word)
-    is_positive=positive_check(word)
+    is_positive = positive_check(word)
+    is_negative = negative_check(word)
     if is_positive:
+        analysis_collection.update_one(
+            {"id": analysis_doc_id},
+            {"$inc": {
+                "total_positive_words": 1,
+            }}
+        )
         return 1
     if is_negative:
-        return -1
-    return 0
+        analysis_collection.update_one(
+            {"id": analysis_doc_id},
+            {"$inc": {
+                "total_negative_words": 1,
+            }}
+        )
+        return - 1
+    return 0  # if neutral
+
 
 def positive_check(word):
     return word in positive_words
@@ -52,3 +160,14 @@ def positive_check(word):
 
 def negative_check(word):
     return word in negative_words
+
+
+def neutral_check(word):
+    return word in neutral_words
+
+
+def is_available_in_dict(word):
+    is_in_positive = positive_check(word)
+    is_in_negative = negative_check(word)
+    is_in_neutral = neutral_check(word)
+    return is_in_positive or is_in_negative or is_in_neutral
