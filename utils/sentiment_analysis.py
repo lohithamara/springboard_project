@@ -7,7 +7,7 @@ from utils.negative_words import negative_words
 from utils.positive_words import positive_words
 from utils.neutral_words import neutral_words
 
-client = MongoClient("mongodb+srv://lohithamara2109_db_user:2u3OqJEO4fVlNHRd@cluster0.qt4qlow.mongodb.net/")
+client = MongoClient("MONGODB_URL")
 database = client.get_database("textminer_db")
 sentences_collection = database.get_collection("sentences")
 words_collection = database.get_collection("words")
